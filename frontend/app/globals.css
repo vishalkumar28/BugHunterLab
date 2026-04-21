@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-sand text-ink font-body;
+  background-image:
+    radial-gradient(circle at top left, rgba(198, 93, 52, 0.16), transparent 22rem),
+    radial-gradient(circle at bottom right, rgba(65, 93, 67, 0.12), transparent 18rem),
+    linear-gradient(135deg, #f7f1e5 0%, #efe3c5 100%);
+}
+
+.panel {
+  @apply rounded-3xl border border-black/10 bg-white/80 p-6 shadow-[0_18px_50px_rgba(17,24,39,0.08)] backdrop-blur;
+}
+
+.eyebrow {
+  @apply text-xs uppercase tracking-[0.3em] text-rust;
+}
