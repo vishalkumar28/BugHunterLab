@@ -11,6 +11,7 @@ class Finding(Base):
     asset_id = Column(Integer, ForeignKey("assets.id"), nullable=True)
     title = Column(String(255), nullable=False)
     severity = Column(String(50), nullable=False) # low, medium, high, critical
+    vulnerability_class = Column(String(100), nullable=True)
     description = Column(Text, nullable=False)
     evidence = Column(Text, nullable=True)
     oob_validated = Column(Boolean, default=False)

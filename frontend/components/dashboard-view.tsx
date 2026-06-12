@@ -13,10 +13,7 @@ export function DashboardView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [mounted, setMounted] = useState(false);
-
   useEffect(() => {
-    setMounted(true);
     api
       .dashboard()
       .then(setData)
@@ -24,8 +21,8 @@ export function DashboardView() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Prevent hydration mismatch by avoiding conditional server/client mismatches
-  if (!mounted) {
+  // Prevent hydration mismatch by returning skeleton during initial load
+  if (loading || !data) {
     return (
       <PageShell title="From Scope to Submission" description="Guide bug bounty work through reconnaissance, vulnerability research, evidence capture, and report generation in one local platform.">
         <p className="text-sm text-ink/60 animate-pulse">Loading dashboard…</p>
