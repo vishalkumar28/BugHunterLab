@@ -9,27 +9,25 @@ from app.api import api_router
 from contextlib import asynccontextmanager
 
 from app.database import engine, Base
-import app.models
+import app.models  # noqa: F401 – registers all ORM models onto Base.metadata
 
-Base.metadata.create_all(bind=engine)
-
-# Mock import for fastapi_limiter (must be in requirements)
-# from fastapi_limiter import FastAPILimiter
-# from fastapi_limiter.depends import RateLimiter
+# NOTE: create_all is called in lifespan so it runs after CORS middleware is registered,
+# ensuring error responses still include CORS headers.
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # redis_conn = aioredis.from_url(settings.REDIS_URL, encoding="utf8", decode_responses=True)
-    # await FastAPILimiter.init(redis_conn)
+    # Create all tables on startup (no-op if they already exist)
+    Base.metadata.create_all(bind=engine)
     yield
-    # await redis_conn.close()
 
 app = FastAPI(title="BugHunterLab V2 API", version="2.0.0", lifespan=lifespan)
 
+# CORS must be added BEFORE including routers so it wraps all responses,
+# including 4xx/5xx error responses.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # In production, restrict this
-    allow_credentials=True,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
