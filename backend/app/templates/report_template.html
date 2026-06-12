@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Vulnerability Report - {{ finding.title }}</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 40px; }
+        h1 { color: #d32f2f; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        h2 { color: #1976d2; margin-top: 30px; }
+        .metadata { background: #f5f5f5; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
+        .severity { font-weight: bold; padding: 3px 8px; border-radius: 3px; color: white; }
+        .sev-critical { background-color: #d32f2f; }
+        .sev-high { background-color: #f57c00; }
+        .sev-medium { background-color: #fbc02d; color: black; }
+        .sev-low { background-color: #388e3c; }
+        code { background: #eee; padding: 2px 4px; border-radius: 3px; }
+        pre { background: #eee; padding: 15px; border-radius: 5px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+
+    <h1>{{ finding.title }}</h1>
+    
+    <div class="metadata">
+        <p><strong>Target:</strong> {{ target.name }}</p>
+        <p><strong>Severity:</strong> <span class="severity sev-{{ finding.severity|lower }}">{{ finding.severity }}</span></p>
+        <p><strong>Date:</strong> {{ finding.created_at }}</p>
+    </div>
+
+    <h2>Description</h2>
+    <p>{{ finding.description }}</p>
+
+    <h2>Evidence</h2>
+    <pre>{{ finding.evidence }}</pre>
+
+    <h2>Remediation</h2>
+    <p>Please refer to standard remediation practices for {{ finding.vulnerability_class }}.</p>
+
+</body>
+</html>

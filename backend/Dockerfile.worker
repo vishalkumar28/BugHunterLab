@@ -1,0 +1,35 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    wget \
+    curl \
+    git \
+    nmap \
+    build-essential \
+    libpq-dev \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Golang
+RUN wget https://go.dev/dl/go1.22.1.linux-amd64.tar.gz && \
+    tar -C /usr/local -xzf go1.22.1.linux-amd64.tar.gz && \
+    rm go1.22.1.linux-amd64.tar.gz
+ENV PATH=$PATH:/usr/local/go/bin:/root/go/bin
+
+# Install security tools via Go
+RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest && \
+    go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest && \
+    go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+
+# Install python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Initial nuclei template download
+RUN nuclei -update-templates
+
+COPY . .
+
+CMD ["celery", "-A", "app.core.celery_app", "worker", "--loglevel=info"]

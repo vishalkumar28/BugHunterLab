@@ -10,7 +10,10 @@ export function LearningStrip() {
   const [learning, setLearning] = useState<Record<string, LearningPhase>>({});
   const [loading, setLoading] = useState(true);
 
+  const [mounted, setMounted] = useState(false);
+
   useEffect(() => {
+    setMounted(true);
     api
       .learning()
       .then(setLearning)
@@ -18,9 +21,16 @@ export function LearningStrip() {
       .finally(() => setLoading(false));
   }, []);
 
+  if (!mounted) {
+    return (
+      <SectionCard title="Methodology Primer" eyebrow="Phases 1-4">
+        <p className="text-sm text-ink/60 animate-pulse">Loading learning modules…</p>
+      </SectionCard>
+    );
+  }
+
   return (
     <SectionCard title="Methodology Primer" eyebrow="Phases 1-4">
-      {loading && <p className="text-sm text-ink/60 animate-pulse">Loading learning modules…</p>}
       <div className="grid gap-4 lg:grid-cols-4">
         {Object.entries(learning).map(([key, phase]) => (
           <div className="rounded-2xl border border-black/10 bg-white/70 p-4" key={key}>

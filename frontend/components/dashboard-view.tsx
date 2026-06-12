@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { api } from "./api";
 import { PageShell } from "./page-shell";
 import { SectionCard } from "./section-card";
+import { AutoScanner } from "./auto-scanner";
 import type { DashboardData } from "./types";
 
 export function DashboardView() {
@@ -12,7 +13,10 @@ export function DashboardView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [mounted, setMounted] = useState(false);
+
   useEffect(() => {
+    setMounted(true);
     api
       .dashboard()
       .then(setData)
@@ -20,9 +24,17 @@ export function DashboardView() {
       .finally(() => setLoading(false));
   }, []);
 
+  // Prevent hydration mismatch by avoiding conditional server/client mismatches
+  if (!mounted) {
+    return (
+      <PageShell title="From Scope to Submission" description="Guide bug bounty work through reconnaissance, vulnerability research, evidence capture, and report generation in one local platform.">
+        <p className="text-sm text-ink/60 animate-pulse">Loading dashboard…</p>
+      </PageShell>
+    );
+  }
+
   return (
     <PageShell title="From Scope to Submission" description="Guide bug bounty work through reconnaissance, vulnerability research, evidence capture, and report generation in one local platform.">
-      {loading && <p className="text-sm text-ink/60 animate-pulse">Loading dashboard…</p>}
       {error && <p className="text-sm text-red-600" role="alert">Failed to load dashboard: {error}</p>}
 
       {data && (
@@ -65,6 +77,8 @@ export function DashboardView() {
                 )) : <p className="text-sm text-ink/70">No targets yet. Start in Scope Analyzer.</p>}
               </div>
             </SectionCard>
+
+            <AutoScanner targetId={data.recent_targets?.[0]?.id || 1} />
 
             <SectionCard title="Recent Findings" eyebrow="Validation">
               <div className="space-y-3">
