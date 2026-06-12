@@ -4,6 +4,9 @@ __pycache__/
 *.pyo
 *.egg-info/
 backend/.venv/
+backend/venv/
+.venv/
+venv/
 *.db
 
 # Node

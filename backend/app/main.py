@@ -8,6 +8,11 @@ from app.core.config import settings
 from app.api import api_router
 from contextlib import asynccontextmanager
 
+from app.database import engine, Base
+import app.models
+
+Base.metadata.create_all(bind=engine)
+
 # Mock import for fastapi_limiter (must be in requirements)
 # from fastapi_limiter import FastAPILimiter
 # from fastapi_limiter.depends import RateLimiter
