@@ -3,7 +3,7 @@ export function SectionCard({ title, eyebrow, children }: Readonly<{ title: stri
     <section className="panel">
       {eyebrow ? <p className="eyebrow mb-3">{eyebrow}</p> : null}
       <h2 className="font-display text-2xl">{title}</h2>
-      <div className="mt-4">{children}</div>
+      <div className="mt-4" suppressHydrationWarning>{children}</div>
     </section>
   );
 }
