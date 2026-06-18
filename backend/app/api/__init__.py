@@ -10,6 +10,7 @@ from app.api.vulnerabilities import router as vulnerabilities_router
 from app.api.checklists import router as checklists_router
 from app.api.poc import router as poc_router
 from app.api.report import router as report_router
+from app.api.evidence import router as evidence_router
 
 api_router = APIRouter()
 api_router.include_router(jobs_router, prefix="/jobs", tags=["jobs"])
@@ -23,3 +24,4 @@ api_router.include_router(vulnerabilities_router, prefix="/vulnerabilities", tag
 api_router.include_router(checklists_router, prefix="/checklists", tags=["checklists"])
 api_router.include_router(poc_router, prefix="/poc", tags=["poc"])
 api_router.include_router(report_router, prefix="/report", tags=["report"])
+api_router.include_router(evidence_router, prefix="/evidence", tags=["evidence"])
