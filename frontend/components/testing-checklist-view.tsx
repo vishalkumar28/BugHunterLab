@@ -66,8 +66,8 @@ export function TestingChecklistView() {
       {items.length > 0 && (
         <SectionCard title={targets.find((t) => t.id === selectedTarget)?.program_name ?? "Checklist"} eyebrow="Results">
           <div className="space-y-4">
-            {items.map((item) => (
-              <div className="rounded-2xl border border-black/10 bg-white/70 p-5" key={item.endpoint}>
+            {items.map((item, index) => (
+              <div className="rounded-2xl border border-black/10 bg-white/70 p-5" key={`${item.method}-${item.endpoint}-${index}`}>
                 <div className="flex items-center justify-between gap-4">
                   <strong className="font-mono text-sm">{item.endpoint}</strong>
                   <span className="rounded-full bg-ink px-3 py-1 text-xs text-white">{item.method}</span>
