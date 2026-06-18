@@ -134,11 +134,12 @@ def normalize_assets_task(self, httpx_result: dict, target_id: int):
 
 
 def start_recon_pipeline(target_id: int, domains: list):
-    """Builds and dispatches subfinder → httpx → normalize chain for each domain."""
+    """Builds and dispatches subfinder → httpx → normalize chain for each domain.
+    Raises an exception if Celery/Redis is unreachable — caller handles fallback."""
     if not domains:
         return None
 
-    domain = domains[0]  # Primary domain for now; extend to group for multi-domain
+    domain = domains[0]  # Primary domain for now
     recon_chain = chain(
         run_subfinder.s(target_id, domain),
         run_httpx.s(target_id),
@@ -146,3 +147,22 @@ def start_recon_pipeline(target_id: int, domains: list):
     )
     result = recon_chain.apply_async()
     return result.id
+
+
+def _run_recon_sync(target_id: int, domains: list) -> str:
+    """Synchronous in-process fallback recon when Celery is unavailable.
+    Runs subfinder → httpx → normalize directly (blocking). Returns a fake job id."""
+    import uuid
+    job_id = f"sync-{uuid.uuid4().hex[:8]}"
+
+    for domain in domains:
+        # Step 1: subfinder
+        sf_result = run_subfinder.run(target_id, domain)   # .run() bypasses Celery
+
+        # Step 2: httpx
+        httpx_result = run_httpx.run(sf_result, target_id)
+
+        # Step 3: normalize + persist to DB
+        normalize_assets_task.run(httpx_result, target_id)
+
+    return job_id

@@ -17,6 +17,19 @@ import app.models  # noqa: F401 – registers all ORM models onto Base.metadata
 async def lifespan(app: FastAPI):
     # Create DB tables on startup (no-op if they already exist)
     Base.metadata.create_all(bind=engine)
+    
+    # Quick schema patch for existing DBs
+    with engine.connect() as conn:
+        from sqlalchemy import text
+        try:
+            conn.execute(text("ALTER TABLE asset_technologies ADD COLUMN IF NOT EXISTS category VARCHAR(100);"))
+            conn.execute(text("ALTER TABLE targets ADD COLUMN IF NOT EXISTS out_of_scope TEXT;"))
+            conn.execute(text("ALTER TABLE findings ADD COLUMN IF NOT EXISTS vulnerability_class VARCHAR(100);"))
+            conn.execute(text("ALTER TABLE findings ADD COLUMN IF NOT EXISTS oob_validated BOOLEAN DEFAULT FALSE;"))
+            conn.commit()
+        except Exception:
+            pass
+
     # Ensure evidence directory exists
     Path("/app/evidence").mkdir(parents=True, exist_ok=True)
     yield
@@ -42,7 +55,7 @@ if extra:
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
+    allow_origins=["*"],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],

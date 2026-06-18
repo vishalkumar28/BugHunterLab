@@ -1,10 +1,11 @@
+import json
+import logging
 from fastapi import APIRouter, HTTPException
 from app.database import SessionLocal
 from app.models.target import Target
 from app.models.asset import Asset, AssetTechnology
-from app.tasks.recon import start_recon_pipeline
-import json
 
+log = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -56,13 +57,31 @@ def run_recon(target_id: int):
                        "Please edit this scope target and add domains (e.g. example.com) in the domains field."
             )
 
-        job_id = start_recon_pipeline(target_id, domains)
+        # Try to dispatch to Celery worker; fall back to in-process if unavailable
+        try:
+            from app.tasks.recon import start_recon_pipeline
+            job_id = start_recon_pipeline(target_id, domains)
+            mode = "async"
+        except Exception as celery_err:
+            log.warning(f"Celery unavailable ({celery_err}), running recon in-process")
+            try:
+                from app.tasks.recon import _run_recon_sync
+                job_id = _run_recon_sync(target_id, domains)
+                mode = "sync"
+            except Exception as sync_err:
+                log.error(f"Sync recon also failed: {sync_err}")
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Recon pipeline unavailable. Celery error: {celery_err}. Sync error: {sync_err}. Is the worker container running?"
+                )
+
         return {
-            "job_id": job_id,
+            "job_id": str(job_id),
             "target_id": target_id,
             "domains": domains,
             "status": "started",
-            "message": f"Recon pipeline started for {len(domains)} domain(s). Watch live logs via WebSocket ws://localhost:8000/ws/logs/{target_id}",
+            "mode": mode,
+            "message": f"Recon pipeline started ({mode}) for {len(domains)} domain(s).",
         }
     finally:
         db.close()
