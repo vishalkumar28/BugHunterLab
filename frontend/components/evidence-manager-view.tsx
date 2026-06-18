@@ -49,8 +49,8 @@ export function EvidenceManagerView() {
     try {
       await api.createFinding({
         ...form,
-        evidence: [{ type: "request-response", note: "Captured during local reproduction" }],
-        reproduction_steps: form.reproduction_steps.split("\n").filter(Boolean),
+        evidence: "Captured during local reproduction",
+        reproduction_steps: form.reproduction_steps,
       });
       setForm((prev) => ({
         ...prev,
