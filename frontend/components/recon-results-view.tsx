@@ -199,10 +199,14 @@ export function ReconResultsView() {
 
   async function clearRecon() {
     if (!selectedTarget) return;
-    await fetch(`${API_BASE_URL}/recon/${selectedTarget}/assets`, { method: "DELETE" });
-    setRecon(null);
-    setLogs([]);
-    setJobId(null);
+    try {
+      await api.clearRecon(selectedTarget);
+      setRecon(null);
+      setLogs([]);
+      setJobId(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to clear results");
+    }
   }
 
   return (
