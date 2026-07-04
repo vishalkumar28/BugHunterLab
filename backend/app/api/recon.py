@@ -178,9 +178,23 @@ def clear_recon_results(target_id: int):
     """Clear all discovered assets and findings for a target (allows fresh rescan)."""
     db = SessionLocal()
     try:
-        deleted_assets = db.query(Asset).filter(Asset.target_id == target_id).delete()
-        deleted_findings = db.query(Finding).filter(Finding.target_id == target_id).delete()
+        # Get all asset IDs for this target
+        assets = db.query(Asset).filter(Asset.target_id == target_id).all()
+        asset_ids = [a.id for a in assets]
+        
+        # Delete child records first to prevent Postgres Foreign Key violations
+        if asset_ids:
+            db.query(AssetTechnology).filter(AssetTechnology.asset_id.in_(asset_ids)).delete(synchronize_session=False)
+            db.query(AssetPort).filter(AssetPort.asset_id.in_(asset_ids)).delete(synchronize_session=False)
+            
+        deleted_assets = db.query(Asset).filter(Asset.target_id == target_id).delete(synchronize_session=False)
+        deleted_findings = db.query(Finding).filter(Finding.target_id == target_id).delete(synchronize_session=False)
+        
         db.commit()
         return {"deleted_assets": deleted_assets, "deleted_findings": deleted_findings, "target_id": target_id}
+    except Exception as e:
+        db.rollback()
+        log.error(f"Failed to clear recon results: {str(e)}")
+        raise HTTPException(status_code=500, detail="Database error while clearing assets")
     finally:
         db.close()
