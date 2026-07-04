@@ -60,6 +60,9 @@ services:
       context: ./backend
       dockerfile: Dockerfile.worker
     container_name: bughunter_worker
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
     depends_on:
       db:
         condition: service_healthy

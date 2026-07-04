@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y \
     libpq-dev \
     unzip \
     libpcap-dev \
+    chromium \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Golang
