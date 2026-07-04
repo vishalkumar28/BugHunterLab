@@ -3,7 +3,8 @@ import logging
 from fastapi import APIRouter, HTTPException
 from app.database import SessionLocal
 from app.models.target import Target
-from app.models.asset import Asset, AssetTechnology
+from app.models.asset import Asset, AssetTechnology, AssetPort
+from app.models.finding import Finding
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -11,7 +12,7 @@ router = APIRouter()
 
 @router.post("/{target_id}")
 def run_recon(target_id: int):
-    """Trigger a full recon pipeline (subfinder → httpx → normalize) for a target."""
+    """Trigger a full recon pipeline (subfinder → dnsx → naabu → httpx → katana+gau → nuclei → normalize) for a target."""
     import re
     db = SessionLocal()
     try:
@@ -81,7 +82,8 @@ def run_recon(target_id: int):
             "domains": domains,
             "status": "started",
             "mode": mode,
-            "message": f"Recon pipeline started ({mode}) for {len(domains)} domain(s).",
+            "pipeline": "subfinder → dnsx → naabu → httpx → katana+gau → nuclei → normalize",
+            "message": f"Enterprise recon pipeline started ({mode}) for {len(domains)} domain(s).",
         }
     finally:
         db.close()
@@ -89,7 +91,7 @@ def run_recon(target_id: int):
 
 @router.get("/{target_id}")
 def get_recon_results(target_id: int):
-    """Return all discovered assets (subdomains, live hosts, technologies) for a target."""
+    """Return all discovered assets (subdomains, live hosts, ports, endpoints, technologies, findings) for a target."""
     db = SessionLocal()
     try:
         target = db.query(Target).filter(Target.id == target_id).first()
@@ -97,14 +99,25 @@ def get_recon_results(target_id: int):
             raise HTTPException(status_code=404, detail="Target not found")
 
         assets = db.query(Asset).filter(Asset.target_id == target_id).all()
+        findings = db.query(Finding).filter(Finding.target_id == target_id).all()
 
         subdomains = []
         live_hosts = []
+        endpoints = []
         technologies_seen = set()
+        ports_data = []
 
         for a in assets:
             if a.type == "subdomain":
                 subdomains.append(a.value)
+                # Include port data for subdomains
+                for p in a.ports:
+                    ports_data.append({
+                        "host": a.value,
+                        "port": p.port,
+                        "protocol": p.protocol,
+                        "service": p.service,
+                    })
             elif a.type == "url":
                 techs = [
                     {"name": t.tech_name, "version": t.version, "category": t.category}
@@ -120,6 +133,22 @@ def get_recon_results(target_id: int):
                     "technologies": techs,
                     "discovered_at": a.created_at.isoformat() if a.created_at else "",
                 })
+            elif a.type == "endpoint":
+                endpoints.append(a.value)
+
+        # Serialize findings from nuclei
+        findings_data = [
+            {
+                "id": f.id,
+                "title": f.title,
+                "severity": f.severity,
+                "vulnerability_class": f.vulnerability_class,
+                "description": f.description,
+                "evidence": f.evidence,
+                "created_at": f.created_at.isoformat() if f.created_at else "",
+            }
+            for f in findings
+        ]
 
         # Build attack surface graph nodes and edges
         nodes = [{"id": f"asset_{a.id}", "label": a.value, "type": a.type} for a in assets]
@@ -133,7 +162,10 @@ def get_recon_results(target_id: int):
                 "subdomains": subdomains,
                 "live_hosts": live_hosts,
                 "technologies": sorted(list(technologies_seen)),
+                "ports": ports_data,
+                "endpoints": endpoints,
             },
+            "findings": findings_data,
             "attack_surface": {"nodes": nodes, "edges": edges},
             "total_assets": len(assets),
         }
@@ -143,11 +175,12 @@ def get_recon_results(target_id: int):
 
 @router.delete("/{target_id}/assets")
 def clear_recon_results(target_id: int):
-    """Clear all discovered assets for a target (allows fresh rescan)."""
+    """Clear all discovered assets and findings for a target (allows fresh rescan)."""
     db = SessionLocal()
     try:
-        deleted = db.query(Asset).filter(Asset.target_id == target_id).delete()
+        deleted_assets = db.query(Asset).filter(Asset.target_id == target_id).delete()
+        deleted_findings = db.query(Finding).filter(Finding.target_id == target_id).delete()
         db.commit()
-        return {"deleted": deleted, "target_id": target_id}
+        return {"deleted_assets": deleted_assets, "deleted_findings": deleted_findings, "target_id": target_id}
     finally:
         db.close()

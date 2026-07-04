@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from .base import Base
@@ -8,13 +8,14 @@ class Asset(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     target_id = Column(Integer, ForeignKey("targets.id"), nullable=False)
-    type = Column(String(50), nullable=False) # subdomain, ip, url
+    type = Column(String(50), nullable=False) # subdomain, ip, url, endpoint
     value = Column(String(512), nullable=False, index=True)
     is_alive = Column(Boolean, default=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     target = relationship("Target", back_populates="assets")
     technologies = relationship("AssetTechnology", back_populates="asset", cascade="all, delete-orphan")
+    ports = relationship("AssetPort", back_populates="asset", cascade="all, delete-orphan")
 
 class AssetTechnology(Base):
     __tablename__ = "asset_technologies"
@@ -26,3 +27,16 @@ class AssetTechnology(Base):
     category = Column(String(100), nullable=True)
 
     asset = relationship("Asset", back_populates="technologies")
+
+
+class AssetPort(Base):
+    """Stores open ports discovered by naabu for a given asset (subdomain/IP)."""
+    __tablename__ = "asset_ports"
+
+    id = Column(Integer, primary_key=True, index=True)
+    asset_id = Column(Integer, ForeignKey("assets.id"), nullable=False)
+    port = Column(Integer, nullable=False)
+    protocol = Column(String(10), default="tcp")
+    service = Column(String(100), nullable=True)
+
+    asset = relationship("Asset", back_populates="ports")

@@ -7,6 +7,23 @@ import { PageShell } from "./page-shell";
 import { SectionCard } from "./section-card";
 import type { ScopeTarget } from "./types";
 
+interface PortData {
+  host: string;
+  port: number;
+  protocol: string;
+  service: string | null;
+}
+
+interface FindingData {
+  id: number;
+  title: string;
+  severity: string;
+  vulnerability_class: string;
+  description: string;
+  evidence: string | null;
+  created_at: string;
+}
+
 interface AssetData {
   target_id: number;
   target_name: string;
@@ -20,13 +37,24 @@ interface AssetData {
       technologies: Array<{ name: string; version?: string; category?: string }>;
     }>;
     technologies: string[];
+    ports: PortData[];
+    endpoints: string[];
   };
+  findings: FindingData[];
   attack_surface: {
     nodes: Array<{ id: string; label: string; type: string }>;
     edges: Array<{ from: string; to: string }>;
   };
   total_assets: number;
 }
+
+const SEVERITY_COLORS: Record<string, string> = {
+  critical: "bg-red-600 text-white",
+  high: "bg-orange-500 text-white",
+  medium: "bg-yellow-500 text-black",
+  low: "bg-blue-500 text-white",
+  info: "bg-gray-400 text-white",
+};
 
 export function ReconResultsView() {
   const [targets, setTargets] = useState<ScopeTarget[]>([]);
@@ -92,7 +120,19 @@ export function ReconResultsView() {
           if (!mounted) return;
           try {
             const data = JSON.parse(event.data);
-            const msg = `[${data.tool}] ${data.status}${data.count ? ` — ${data.count} subdomains` : ""}${data.live_hosts !== undefined ? ` — ${data.live_hosts} live hosts` : ""}${data.assets_added !== undefined ? ` — ${data.assets_added} assets saved` : ""}${data.error ? ` — ${data.error}` : ""}`;
+            const parts = [`[${data.tool}] ${data.status}`];
+            if (data.count) parts.push(`${data.count} subdomains`);
+            if (data.resolved !== undefined) parts.push(`${data.resolved} resolved`);
+            if (data.filtered_out !== undefined) parts.push(`${data.filtered_out} filtered out`);
+            if (data.hosts_with_ports !== undefined) parts.push(`${data.hosts_with_ports} hosts, ${data.total_ports} ports`);
+            if (data.live_hosts !== undefined) parts.push(`${data.live_hosts} live hosts`);
+            if (data.endpoints !== undefined) parts.push(`${data.endpoints} endpoints`);
+            if (data.historical_urls !== undefined) parts.push(`${data.historical_urls} historical URLs`);
+            if (data.findings !== undefined) parts.push(`${data.findings} vulnerabilities found`);
+            if (data.assets_added !== undefined) parts.push(`${data.assets_added} assets saved`);
+            if (data.error) parts.push(data.error);
+
+            const msg = parts.join(" — ");
             setLogs((prev) => [...prev, msg]);
             // When normalize completes, refresh results from DB
             if (data.tool === "normalize" && data.status === "completed") {
@@ -145,8 +185,11 @@ export function ReconResultsView() {
         return;
       }
       setJobId(data.job_id);
-      setLogs([`Pipeline started — job ${data.job_id?.slice(0, 8)}…`]);
-      setLogs((prev) => [...prev, `Scanning: ${data.domains?.join(", ") || "domains"}`]);
+      setLogs([
+        `🚀 Enterprise pipeline started — job ${data.job_id?.slice(0, 8)}…`,
+        `📋 Pipeline: ${data.pipeline || "subfinder → dnsx → naabu → httpx → katana+gau → nuclei → normalize"}`,
+        `🎯 Scanning: ${data.domains?.join(", ") || "domains"}`,
+      ]);
       // Results will auto-refresh when WebSocket receives "normalize completed"
     } catch (err) {
       setError(err instanceof Error ? err.message : "Cannot reach API");
@@ -165,11 +208,11 @@ export function ReconResultsView() {
   return (
     <PageShell
       title="Recon Results"
-      description="Enumerate subdomains, services, technologies, and hidden endpoints, then turn discovery data into testing momentum."
+      description="Enterprise recon pipeline: subdomain enumeration, DNS resolution, port scanning, HTTP probing, endpoint crawling, and automated vulnerability detection."
     >
       {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
 
-      <SectionCard title="Execute Recon" eyebrow="Asset Discovery">
+      <SectionCard title="Execute Recon" eyebrow="Enterprise Pipeline">
         {loading ? (
           <p className="text-sm text-ink/60 animate-pulse">Loading targets…</p>
         ) : targets.length === 0 ? (
@@ -201,7 +244,7 @@ export function ReconResultsView() {
               type="button"
               disabled={running || !selectedTarget}
             >
-              {running ? "Running pipeline…" : "Run Recon Pass"}
+              {running ? "Running enterprise pipeline…" : "Run Enterprise Recon"}
             </button>
 
             {recon && recon.total_assets > 0 && (
@@ -220,16 +263,47 @@ export function ReconResultsView() {
       {/* Live log output */}
       {logs.length > 0 && (
         <SectionCard title="Live Pipeline Logs" eyebrow="Stream">
-          <div className="rounded-xl bg-gray-900 p-4 font-mono text-xs text-gray-100 max-h-48 overflow-y-auto space-y-1">
+          <div className="rounded-xl bg-gray-900 p-4 font-mono text-xs text-gray-100 max-h-64 overflow-y-auto space-y-1">
             {logs.map((log, i) => (
               <div key={i} className="text-green-300">▶ {log}</div>
             ))}
-            {running && <div className="animate-pulse text-yellow-300">⏳ Waiting for tools to finish…</div>}
+            {running && <div className="animate-pulse text-yellow-300">⏳ Pipeline running… this may take several minutes.</div>}
           </div>
         </SectionCard>
       )}
 
-      {/* Results */}
+      {/* ── Nuclei Findings ── */}
+      {recon && recon.findings && recon.findings.length > 0 && (
+        <SectionCard
+          title={`Vulnerabilities (${recon.findings.length})`}
+          eyebrow="Nuclei Scan Results"
+        >
+          <div className="space-y-3 max-h-80 overflow-y-auto">
+            {recon.findings.map((f) => (
+              <div key={f.id} className="rounded-xl border border-black/10 bg-white/60 px-4 py-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold uppercase ${SEVERITY_COLORS[f.severity] || SEVERITY_COLORS.info}`}>
+                    {f.severity}
+                  </span>
+                  <span className="font-semibold text-sm text-ink">{f.title}</span>
+                </div>
+                {f.vulnerability_class && (
+                  <p className="text-xs text-ink/50 font-mono mb-1">{f.vulnerability_class}</p>
+                )}
+                <p className="text-xs text-ink/70 line-clamp-3">{f.description}</p>
+                {f.evidence && (
+                  <details className="mt-2">
+                    <summary className="text-xs text-blue-600 cursor-pointer">View Evidence</summary>
+                    <pre className="mt-1 rounded bg-gray-100 p-2 text-xs overflow-x-auto whitespace-pre-wrap">{f.evidence}</pre>
+                  </details>
+                )}
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+      )}
+
+      {/* Results grid */}
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Subdomains */}
         <SectionCard title={`Subdomains (${recon?.assets?.subdomains?.length ?? 0})`} eyebrow="Normalized Output">
@@ -254,6 +328,54 @@ export function ReconResultsView() {
                 <span key={i} className="rounded-full bg-rust/10 px-3 py-1 text-xs font-semibold text-rust">{t}</span>
               ))}
             </div>
+          )}
+        </SectionCard>
+
+        {/* Open Ports */}
+        <SectionCard title={`Open Ports (${recon?.assets?.ports?.length ?? 0})`} eyebrow="Naabu Scan">
+          {!recon || !recon.assets.ports || recon.assets.ports.length === 0 ? (
+            <p className="text-sm text-ink/60">Ports discovered by naabu will appear here.</p>
+          ) : (
+            <div className="max-h-64 overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-left text-ink/50 border-b border-black/10">
+                    <th className="pb-2 pr-4">Host</th>
+                    <th className="pb-2 pr-4">Port</th>
+                    <th className="pb-2">Protocol</th>
+                  </tr>
+                </thead>
+                <tbody className="font-mono">
+                  {recon.assets.ports.map((p, i) => (
+                    <tr key={i} className="border-b border-black/5">
+                      <td className="py-1.5 pr-4 text-ink/80">{p.host}</td>
+                      <td className="py-1.5 pr-4 font-bold text-rust">{p.port}</td>
+                      <td className="py-1.5 text-ink/60">{p.protocol}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </SectionCard>
+
+        {/* Discovered Endpoints */}
+        <SectionCard title={`Endpoints (${recon?.assets?.endpoints?.length ?? 0})`} eyebrow="Katana + GAU">
+          {!recon || !recon.assets.endpoints || recon.assets.endpoints.length === 0 ? (
+            <p className="text-sm text-ink/60">Endpoints discovered by katana and gau will appear here.</p>
+          ) : (
+            <ul className="space-y-1 max-h-64 overflow-y-auto font-mono text-xs">
+              {recon.assets.endpoints.slice(0, 200).map((ep, i) => (
+                <li key={i} className="text-ink/80 truncate" title={ep}>
+                  <a href={ep} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">
+                    {ep}
+                  </a>
+                </li>
+              ))}
+              {recon.assets.endpoints.length > 200 && (
+                <li className="text-ink/40 italic">…and {recon.assets.endpoints.length - 200} more endpoints</li>
+              )}
+            </ul>
           )}
         </SectionCard>
 
@@ -295,7 +417,10 @@ export function ReconResultsView() {
               <p><strong>Total Assets:</strong> {recon.total_assets}</p>
               <p><strong>Subdomains:</strong> {recon.assets.subdomains.length}</p>
               <p><strong>Live Hosts:</strong> {recon.assets.live_hosts.length}</p>
+              <p><strong>Open Ports:</strong> {recon.assets.ports?.length ?? 0}</p>
+              <p><strong>Endpoints:</strong> {recon.assets.endpoints?.length ?? 0}</p>
               <p><strong>Technologies:</strong> {recon.assets.technologies.length}</p>
+              <p><strong>Vulnerabilities:</strong> {recon.findings?.length ?? 0}</p>
               {jobId && <p className="text-xs text-gray-400"><strong>Job ID:</strong> {jobId}</p>}
             </div>
           )}
