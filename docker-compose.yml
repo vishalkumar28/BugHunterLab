@@ -48,7 +48,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - JWT_SECRET=${JWT_SECRET:-change_this_in_production_min_32_chars}
       - EVIDENCE_DIR=/app/evidence
-      - ALLOWED_ORIGINS=http://localhost:3000,http://frontend:3000
+      - ALLOWED_ORIGINS=http://54.80.5.35:3000,http://localhost:3000,http://frontend:3000
     volumes:
       - ./backend:/app
       - evidence_data:/app/evidence
@@ -97,7 +97,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000/api
+      - NEXT_PUBLIC_API_URL=http://54.80.5.35:8000/api
     volumes:
       - ./frontend:/app
       - /app/node_modules
