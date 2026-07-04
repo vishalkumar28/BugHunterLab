@@ -22,8 +22,8 @@ export type Finding = {
   status: string;
   endpoint: string;
   description: string;
-  evidence: Array<Record<string, string>>;
-  reproduction_steps: string[];
+  evidence: string;
+  reproduction_steps: string;
   created_at: string;
 };
 
@@ -91,4 +91,10 @@ export type LearningPhase = {
   tools?: string[];
   focus?: string[];
   highlight_issues?: string[];
+};
+
+export type SubmissionResponse = {
+  status: string;
+  platform: string;
+  external_id: string;
 };

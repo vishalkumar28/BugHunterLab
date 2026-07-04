@@ -8,6 +8,7 @@ import type {
   ReportResponse,
   ScopeTarget,
   VulnerabilityEntry,
+  SubmissionResponse,
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
@@ -89,6 +90,13 @@ export const api = {
   // Report
   report: (findingId: number) => request<ReportResponse>(`/report/${findingId}`),
   downloadReportPdf: (findingId: number) => `${API_BASE}/report/${findingId}/pdf`,
+
+  // Submissions
+  submitReport: (findingId: number, platform: string) =>
+    request<SubmissionResponse>("/submissions/submit", {
+      method: "POST",
+      body: JSON.stringify({ finding_id: findingId, platform }),
+    }),
 
   // Evidence
   listEvidence: (findingId: number) => request<unknown[]>(`/evidence/${findingId}`),

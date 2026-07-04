@@ -14,6 +14,8 @@ export function ReportBuilderView() {
   const [loading, setLoading] = useState(true);
   const [building, setBuilding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submissionResult, setSubmissionResult] = useState<{ status: string; platform: string; external_id: string } | null>(null);
 
   useEffect(() => {
     api
@@ -30,6 +32,7 @@ export function ReportBuilderView() {
     if (!selectedFinding) return;
     setBuilding(true);
     setError(null);
+    setSubmissionResult(null);
     try {
       const response = await api.report(selectedFinding);
       setReport(response);
@@ -40,9 +43,29 @@ export function ReportBuilderView() {
     }
   }
 
+  async function submitReport() {
+    if (!selectedFinding) return;
+    setSubmitting(true);
+    setError(null);
+    setSubmissionResult(null);
+    try {
+      const response = await api.submitReport(selectedFinding, "hackerone");
+      setSubmissionResult(response);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Submission failed");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <PageShell title="Report Builder" description="Compile bug bounty reports with summary, impact, reproduction steps, proof, and remediation advice.">
       {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
+      {submissionResult && (
+        <p className="text-sm text-green-700 bg-green-50 p-4 rounded-xl border border-green-200" role="alert">
+          Successfully submitted to {submissionResult.platform}. External ID: {submissionResult.external_id}
+        </p>
+      )}
 
       <SectionCard title="Build Disclosure" eyebrow="Report Generation">
         {loading ? (
@@ -64,6 +87,9 @@ export function ReportBuilderView() {
                 Open PDF
               </a>
             ) : null}
+            <button className="rounded-full bg-[#3e3c38] px-5 py-3 text-white text-sm transition hover:bg-black disabled:opacity-50" onClick={submitReport} type="button" disabled={submitting || !selectedFinding}>
+              {submitting ? "Submitting..." : "Submit to HackerOne"}
+            </button>
           </div>
         )}
       </SectionCard>

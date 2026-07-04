@@ -31,31 +31,80 @@ export function AutoScanner({ targetId }: { targetId: number }) {
   // Build WebSocket URL from the same host as the API
   const wsBase = API_BASE_URL.replace(/^https?/, "ws").replace("/api", "");
 
+  // Only connect WebSocket when a scan is actively running
   useEffect(() => {
-    if (!targetId) return;
+    if (!targetId || !isScanning) {
+      // Close any existing connection when not scanning
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+        setIsConnected(false);
+      }
+      return;
+    }
 
-    const ws = new WebSocket(`${wsBase}/ws/logs/${targetId}`);
-    wsRef.current = ws;
+    let mounted = true;
+    let retryTimeout: ReturnType<typeof setTimeout>;
+    let retryCount = 0;
+    const MAX_RETRIES = 3;
 
-    ws.onopen = () => setIsConnected(true);
-    ws.onclose = () => setIsConnected(false);
-    ws.onerror = () => setIsConnected(false);
-
-    ws.onmessage = (event) => {
+    function connect() {
+      if (!mounted) return;
       try {
-        const data = JSON.parse(event.data) as LogEntry;
-        setLogs((prev) => [...prev, data]);
-        if (data.status === "completed" || data.status === "error" || data.status === "timeout") {
-          setIsScanning(false);
-        }
-        logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        const ws = new WebSocket(`${wsBase}/ws/logs/${targetId}`);
+        wsRef.current = ws;
+
+        ws.onopen = () => {
+          if (mounted) {
+            setIsConnected(true);
+            retryCount = 0;
+          }
+        };
+
+        ws.onclose = () => {
+          if (mounted) {
+            setIsConnected(false);
+            // Only retry if still scanning and under retry limit
+            if (isScanning && retryCount < MAX_RETRIES) {
+              retryCount++;
+              retryTimeout = setTimeout(connect, Math.min(1000 * Math.pow(2, retryCount), 8000));
+            }
+          }
+        };
+
+        ws.onerror = () => {
+          // onerror is always followed by onclose, so we just suppress here
+        };
+
+        ws.onmessage = (event) => {
+          if (!mounted) return;
+          try {
+            const data = JSON.parse(event.data) as LogEntry;
+            setLogs((prev) => [...prev, data]);
+            if (data.status === "completed" || data.status === "error" || data.status === "timeout") {
+              setIsScanning(false);
+            }
+            logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+          } catch {
+            // Ignore unparseable messages
+          }
+        };
       } catch {
-        // Ignore unparseable messages
+        // WebSocket constructor can throw if URL is invalid
+      }
+    }
+
+    connect();
+
+    return () => {
+      mounted = false;
+      clearTimeout(retryTimeout);
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
       }
     };
-
-    return () => ws.close();
-  }, [targetId, wsBase]);
+  }, [targetId, wsBase, isScanning]);
 
   const startScan = async () => {
     if (!targetId) return;

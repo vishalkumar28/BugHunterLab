@@ -55,29 +55,70 @@ export function ReconResultsView() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Connect WebSocket for live logs when target changes
+  // Connect WebSocket for live logs only when a scan is running
   useEffect(() => {
-    if (!selectedTarget) return;
-    const wsBase = API_BASE_URL.replace(/^https?/, "ws").replace("/api", "");
-    const ws = new WebSocket(`${wsBase}/ws/logs/${selectedTarget}`);
-    wsRef.current = ws;
+    if (!selectedTarget || !running) {
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+      return;
+    }
 
-    ws.onmessage = (event) => {
+    let mounted = true;
+    let retryTimeout: ReturnType<typeof setTimeout>;
+    let retryCount = 0;
+    const MAX_RETRIES = 3;
+
+    function connect() {
+      if (!mounted) return;
       try {
-        const data = JSON.parse(event.data);
-        const msg = `[${data.tool}] ${data.status}${data.count ? ` — ${data.count} subdomains` : ""}${data.live_hosts !== undefined ? ` — ${data.live_hosts} live hosts` : ""}${data.assets_added !== undefined ? ` — ${data.assets_added} assets saved` : ""}${data.error ? ` — ${data.error}` : ""}`;
-        setLogs((prev) => [...prev, msg]);
-        // When normalize completes, refresh results from DB
-        if (data.tool === "normalize" && data.status === "completed") {
-          setRunning(false);
-          if (selectedTarget) loadResults(selectedTarget);
-        }
+        const wsBase = API_BASE_URL.replace(/^https?/, "ws").replace("/api", "");
+        const ws = new WebSocket(`${wsBase}/ws/logs/${selectedTarget}`);
+        wsRef.current = ws;
+
+        ws.onclose = () => {
+          if (mounted && running && retryCount < MAX_RETRIES) {
+            retryCount++;
+            retryTimeout = setTimeout(connect, Math.min(1000 * Math.pow(2, retryCount), 8000));
+          }
+        };
+
+        ws.onerror = () => {
+          // onerror is always followed by onclose
+        };
+
+        ws.onmessage = (event) => {
+          if (!mounted) return;
+          try {
+            const data = JSON.parse(event.data);
+            const msg = `[${data.tool}] ${data.status}${data.count ? ` — ${data.count} subdomains` : ""}${data.live_hosts !== undefined ? ` — ${data.live_hosts} live hosts` : ""}${data.assets_added !== undefined ? ` — ${data.assets_added} assets saved` : ""}${data.error ? ` — ${data.error}` : ""}`;
+            setLogs((prev) => [...prev, msg]);
+            // When normalize completes, refresh results from DB
+            if (data.tool === "normalize" && data.status === "completed") {
+              setRunning(false);
+              if (selectedTarget) loadResults(selectedTarget);
+            }
+          } catch {
+            // ignore
+          }
+        };
       } catch {
-        // ignore
+        // WebSocket constructor can throw
+      }
+    }
+
+    connect();
+
+    return () => {
+      mounted = false;
+      clearTimeout(retryTimeout);
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
       }
     };
-    return () => ws.close();
-  }, [selectedTarget]);
+  }, [selectedTarget, running]);
 
   async function loadResults(targetId: number) {
     try {
