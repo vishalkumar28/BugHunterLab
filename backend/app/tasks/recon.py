@@ -11,6 +11,9 @@ so the frontend can show live pipeline logs.
 import json
 import subprocess
 import os
+
+os.environ["PATH"] += os.pathsep + "/root/go/bin:/usr/local/go/bin"
+
 from celery import shared_task, chain
 from app.core.celery_app import celery_app
 import redis
