@@ -168,7 +168,7 @@ def run_naabu(self, dnsx_result: dict, target_id: int):
         result = _safe_run(
             ["naabu", "-silent", "-top-ports", "1000", "-json"],
             input_data=input_data,
-            timeout=600,
+            timeout=3600, # Increased timeout to 1 hour to prevent skipping
         )
         ports_map = {}  # host -> [port, port, ...]
         for line in result.stdout.splitlines():
@@ -246,7 +246,7 @@ def run_httpx(self, naabu_result: dict, target_id: int):
             ["httpx", "-silent", "-status-code", "-title", "-tech-detect",
              "-follow-redirects", "-json"],
             input_data=input_data,
-            timeout=600,
+            timeout=3600, # Increased timeout to 1 hour
         )
         for line in result.stdout.splitlines():
             try:

@@ -306,6 +306,34 @@ export function ReconResultsView() {
           )}
         </SectionCard>
 
+        {/* Open Ports */}
+        <SectionCard title={`Open Ports (${recon?.assets?.ports?.length ?? 0})`} eyebrow="Naabu Scan">
+          {!recon || !recon.assets.ports || recon.assets.ports.length === 0 ? (
+            <p className="text-sm text-ink/60">Ports discovered by naabu will appear here.</p>
+          ) : (
+            <div className="max-h-64 overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-left text-ink/50 border-b border-black/10">
+                    <th className="pb-2 pr-4">Host</th>
+                    <th className="pb-2 pr-4">Port</th>
+                    <th className="pb-2">Protocol</th>
+                  </tr>
+                </thead>
+                <tbody className="font-mono">
+                  {recon.assets.ports.map((p, i) => (
+                    <tr key={i} className="border-b border-black/5">
+                      <td className="py-1.5 pr-4 text-ink/80">{p.host}</td>
+                      <td className="py-1.5 pr-4 font-bold text-rust">{p.port}</td>
+                      <td className="py-1.5 text-ink/60">{p.protocol}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </SectionCard>
+
 
 
         {/* Live hosts */}
@@ -346,6 +374,7 @@ export function ReconResultsView() {
               <p><strong>Total Assets:</strong> {recon.total_assets}</p>
               <p><strong>Subdomains:</strong> {recon.assets.subdomains.length}</p>
               <p><strong>Live Hosts:</strong> {recon.assets.live_hosts.length}</p>
+              <p><strong>Open Ports:</strong> {recon.assets.ports?.length ?? 0}</p>
               <p><strong>Technologies:</strong> {recon.assets.technologies.length}</p>
               {jobId && <p className="text-xs text-gray-400"><strong>Job ID:</strong> {jobId}</p>}
             </div>
