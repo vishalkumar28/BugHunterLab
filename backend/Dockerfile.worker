@@ -21,18 +21,15 @@ RUN wget https://go.dev/dl/go1.22.1.linux-amd64.tar.gz && \
 ENV PATH=$PATH:/usr/local/go/bin:/root/go/bin
 
 # ── Install ProjectDiscovery security tools via Go ──────────────────────
-# Core recon tools
 RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest && \
     go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest && \
-    go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
-
-# Enterprise-grade additions
-RUN go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest && \
+    go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest && \
+    go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest && \
     go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest && \
-    go install -v github.com/projectdiscovery/katana/cmd/katana@latest
-
-# Historical URL discovery
-RUN go install -v github.com/lc/gau/v2/cmd/gau@latest
+    go install -v github.com/projectdiscovery/katana/cmd/katana@latest && \
+    go install -v github.com/lc/gau/v2/cmd/gau@latest && \
+    # CLEANUP GO CACHE to save gigabytes of space during Docker build
+    rm -rf /root/go/pkg/mod /root/.cache/go-build /tmp/*
 
 # Install python dependencies
 COPY requirements.txt .
