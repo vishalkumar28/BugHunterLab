@@ -76,7 +76,7 @@ def run_dnsx(self, subfinder_result: dict, target_id: int):
     try:
         input_data = "\n".join(subdomains)
         result = _safe_run(
-            ["dnsx", "-silent", "-a", "-resp", "-json"],
+            ["dnsx", "-silent", "-a", "-json"],
             input_data=input_data,
             timeout=300,
         )
@@ -91,13 +91,16 @@ def run_dnsx(self, subfinder_result: dict, target_id: int):
                     resolved_hosts.add(host)
                     resolved.append({"host": host, "ips": ips})
             except json.JSONDecodeError:
-                host = line.strip()
+                line_str = line.strip()
+                if not line_str: continue
+                # if dnsx outputs standard text format e.g. "sub.domain.com [1.2.3.4]"
+                host = line_str.split()[0]
                 if host:
                     resolved_hosts.add(host)
                     resolved.append({"host": host, "ips": []})
 
         # Keep only resolved subdomains (valid DNS)
-        valid_subs = [s for s in subdomains if s in resolved_hosts] or subdomains
+        valid_subs = [s for s in subdomains if s in resolved_hosts]
         _publish(target_id, {
             "tool": "dnsx", "status": "completed",
             "resolved": len(resolved), "filtered_out": len(subdomains) - len(valid_subs),
