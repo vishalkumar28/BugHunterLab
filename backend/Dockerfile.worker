@@ -39,7 +39,7 @@ RUN echo "Verifying tools..." && \
     naabu -version && \
     katana -version && \
     nuclei -version && \
-    gau -version && \
+    gau --version && \
     echo "All 7 tools verified OK"
 
 # Install python dependencies
