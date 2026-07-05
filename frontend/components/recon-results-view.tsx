@@ -186,9 +186,9 @@ export function ReconResultsView() {
       }
       setJobId(data.job_id);
       setLogs([
-        `🚀 Recon pipeline started — job ${data.job_id?.slice(0, 8)}…`,
-        `📋 Pipeline: ${data.pipeline || "subfinder → naabu → httpx → normalize"}`,
-        `🎯 Scanning: ${data.domains?.join(", ") || "domains"}`,
+        `Recon pipeline started — job ${data.job_id?.slice(0, 8)}…`,
+        `Pipeline: ${data.pipeline || "subfinder → naabu → httpx → normalize"}`,
+        `Scanning: ${data.domains?.join(", ") || "domains"}`,
       ]);
       // Results will auto-refresh when WebSocket receives "normalize completed"
     } catch (err) {
@@ -269,9 +269,9 @@ export function ReconResultsView() {
         <SectionCard title="Live Pipeline Logs" eyebrow="Stream">
           <div className="rounded-xl bg-gray-900 p-4 font-mono text-xs text-gray-100 max-h-64 overflow-y-auto space-y-1">
             {logs.map((log, i) => (
-              <div key={i} className="text-green-300">▶ {log}</div>
+              <div key={i} className="text-green-300"> {log}</div>
             ))}
-            {running && <div className="animate-pulse text-yellow-300">⏳ Pipeline running… this may take several minutes.</div>}
+            {running && <div className="animate-pulse text-yellow-300"> Pipeline running… this may take several minutes.</div>}
           </div>
         </SectionCard>
       )}
