@@ -163,22 +163,11 @@ def run_naabu(self, dnsx_result: dict, target_id: int):
         }
 
     try:
-        import tempfile
-        import os
-
-        # Write subdomains to a temporary file to use with -list
-        fd, temp_path = tempfile.mkstemp(prefix="naabu_targets_", text=True)
-        with open(fd, 'w') as f:
-            f.write("\n".join(subdomains))
-
-        try:
-            # Scan top 1000 ports with JSON output using -list
-            result = _safe_run(
-                ["naabu", "-silent", "-list", temp_path, "-top-ports", "1000", "-json"],
-                timeout=3600,
-            )
-        finally:
-            os.remove(temp_path)
+        # Scan top 1000 ports with JSON output for the main domain only
+        result = _safe_run(
+            ["naabu", "-silent", "-host", domain, "-top-ports", "1000", "-json"],
+            timeout=3600,
+        )
         ports_map = {}  # host -> [port, port, ...]
         for line in result.stdout.splitlines():
             try:
