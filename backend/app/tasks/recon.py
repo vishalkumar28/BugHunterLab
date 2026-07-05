@@ -453,55 +453,64 @@ def normalize_assets_task(self, pipeline_result: dict, target_id: int):
 
         stats = {"subdomains": 0, "live_hosts": 0, "ports": 0, "endpoints": 0, "findings": 0}
 
-        # ── Persist subdomains ──
+        # ── Persist subdomains and ports ──
         for subdomain in subdomains:
-            exists = db.query(Asset).filter(
+            asset = db.query(Asset).filter(
                 Asset.target_id == target_id, Asset.value == subdomain
             ).first()
-            if not exists:
-                # Lookup resolved IPs for this subdomain
+            
+            if not asset:
                 asset = Asset(target_id=target_id, type="subdomain", value=subdomain, is_alive=False)
                 db.add(asset)
                 db.flush()
+                stats["subdomains"] += 1
 
-                # Attach discovered ports from naabu
-                if subdomain in ports_map:
-                    for port in ports_map[subdomain]:
+            # Attach discovered ports from naabu (even if the subdomain already existed)
+            if subdomain in ports_map:
+                for port in ports_map[subdomain]:
+                    port_exists = db.query(AssetPort).filter(
+                        AssetPort.asset_id == asset.id, AssetPort.port == port
+                    ).first()
+                    if not port_exists:
                         port_entry = AssetPort(asset_id=asset.id, port=port, protocol="tcp")
                         db.add(port_entry)
                         stats["ports"] += 1
-
-                stats["subdomains"] += 1
 
         # ── Persist live hosts with technologies ──
         for host in live_hosts:
             url = host.get("url", "")
             if not url:
                 continue
-            exists = db.query(Asset).filter(
+                
+            asset = db.query(Asset).filter(
                 Asset.target_id == target_id, Asset.value == url
             ).first()
-            if not exists:
+            
+            if not asset:
                 asset = Asset(target_id=target_id, type="url", value=url, is_alive=True)
                 db.add(asset)
                 db.flush()
-                for tech in host.get("technologies", []):
-                    if isinstance(tech, str) and tech:
-                        tech_entry = AssetTechnology(
-                            asset_id=asset.id,
-                            tech_name=tech,
-                        )
-                        db.add(tech_entry)
-                # Also store webserver as a technology if detected
-                webserver = host.get("webserver", "")
-                if webserver:
-                    tech_entry = AssetTechnology(
-                        asset_id=asset.id,
-                        tech_name=webserver,
-                        category="Web Server",
-                    )
-                    db.add(tech_entry)
                 stats["live_hosts"] += 1
+            elif not asset.is_alive:
+                asset.is_alive = True
+                stats["live_hosts"] += 1
+
+            # Attach technologies (even if host already existed)
+            techs_to_add = host.get("technologies", [])
+            webserver = host.get("webserver", "")
+            if webserver:
+                techs_to_add.append(webserver)
+                
+            for tech in techs_to_add:
+                if isinstance(tech, str) and tech:
+                    tech_exists = db.query(AssetTechnology).filter(
+                        AssetTechnology.asset_id == asset.id, AssetTechnology.tech_name == tech
+                    ).first()
+                    if not tech_exists:
+                        # Determine category
+                        category = "Web Server" if tech == webserver else None
+                        tech_entry = AssetTechnology(asset_id=asset.id, tech_name=tech, category=category)
+                        db.add(tech_entry)
 
         # ── Persist discovered endpoints from katana/gau ──
         for ep in endpoints:
