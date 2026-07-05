@@ -163,13 +163,22 @@ def run_naabu(self, dnsx_result: dict, target_id: int):
         }
 
     try:
-        input_data = "\n".join(subdomains)
-        # Scan top 1000 ports with JSON output
-        result = _safe_run(
-            ["naabu", "-silent", "-top-ports", "1000", "-json"],
-            input_data=input_data,
-            timeout=3600, # Increased timeout to 1 hour to prevent skipping
-        )
+        import tempfile
+        import os
+
+        # Write subdomains to a temporary file to use with -list
+        fd, temp_path = tempfile.mkstemp(prefix="naabu_targets_", text=True)
+        with open(fd, 'w') as f:
+            f.write("\n".join(subdomains))
+
+        try:
+            # Scan top 1000 ports with JSON output using -list
+            result = _safe_run(
+                ["naabu", "-silent", "-list", temp_path, "-top-ports", "1000", "-json"],
+                timeout=3600,
+            )
+        finally:
+            os.remove(temp_path)
         ports_map = {}  # host -> [port, port, ...]
         for line in result.stdout.splitlines():
             try:
@@ -241,13 +250,21 @@ def run_httpx(self, naabu_result: dict, target_id: int):
     _publish(target_id, {"tool": "httpx", "status": "running", "targets": len(targets)})
     live = []
     try:
-        input_data = "\n".join(targets)
-        result = _safe_run(
-            ["httpx", "-silent", "-status-code", "-title", "-tech-detect",
-             "-follow-redirects", "-json"],
-            input_data=input_data,
-            timeout=3600, # Increased timeout to 1 hour
-        )
+        import tempfile
+        import os
+        
+        fd, temp_path = tempfile.mkstemp(prefix="httpx_targets_", text=True)
+        with open(fd, 'w') as f:
+            f.write("\n".join(targets))
+            
+        try:
+            result = _safe_run(
+                ["httpx", "-silent", "-l", temp_path, "-status-code", "-title", "-tech-detect",
+                 "-follow-redirects", "-json"],
+                timeout=3600, # Increased timeout to 1 hour
+            )
+        finally:
+            os.remove(temp_path)
         for line in result.stdout.splitlines():
             try:
                 entry = json.loads(line)
