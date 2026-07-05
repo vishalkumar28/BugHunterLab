@@ -35,12 +35,6 @@ def run_recon(target_id: int):
         # If not a valid JSON list, extract domain patterns from raw text
         if not domains:
             # Match *.example.com, example.com, sub.example.com patterns
-            domain_pattern = re.compile(
-                r'\*?\.?([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}',
-                re.IGNORECASE
-            )
-            found = domain_pattern.findall(raw)
-            # findall returns list of tuples due to groups — extract full matches
             full_matches = re.findall(
                 r'(\*?\.?[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,})',
                 raw
@@ -58,22 +52,26 @@ def run_recon(target_id: int):
                        "Please edit this scope target and add domains (e.g. example.com) in the domains field."
             )
 
-        # Try to dispatch to Celery worker; fall back to in-process if unavailable
+        # Try to dispatch to Celery worker
         try:
             from app.tasks.recon import start_recon_pipeline
             job_id = start_recon_pipeline(target_id, domains)
             mode = "async"
+            log.info(f"Recon dispatched to Celery worker: job={job_id} target={target_id}")
         except Exception as celery_err:
-            log.warning(f"Celery unavailable ({celery_err}), running recon in-process")
+            log.warning(f"Celery dispatch failed ({celery_err}), falling back to sync mode")
+            # Sync fallback — runs in-process (only works if tools are installed on API container)
             try:
                 from app.tasks.recon import _run_recon_sync
                 job_id = _run_recon_sync(target_id, domains)
                 mode = "sync"
+                log.info(f"Recon completed in sync mode: job={job_id}")
             except Exception as sync_err:
                 log.error(f"Sync recon also failed: {sync_err}")
                 raise HTTPException(
                     status_code=503,
-                    detail=f"Recon pipeline unavailable. Celery error: {celery_err}. Sync error: {sync_err}. Is the worker container running?"
+                    detail=f"Recon pipeline unavailable. Worker error: {celery_err}. "
+                           "Make sure the worker container is running: docker compose up -d worker"
                 )
 
         return {

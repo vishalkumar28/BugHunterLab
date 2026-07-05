@@ -31,6 +31,17 @@ RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest 
     # CLEANUP GO CACHE to save gigabytes of space during Docker build
     rm -rf /root/go/pkg/mod /root/.cache/go-build /tmp/*
 
+# ── Verify all tools were installed ─────────────────────────────────────
+RUN echo "Verifying tools..." && \
+    subfinder -version && \
+    httpx -version && \
+    dnsx -version && \
+    naabu -version && \
+    katana -version && \
+    nuclei -version && \
+    gau -version && \
+    echo "All 7 tools verified OK"
+
 # Install python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

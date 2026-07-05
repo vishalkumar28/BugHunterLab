@@ -9,14 +9,20 @@ so the frontend can show live pipeline logs.
 """
 
 import json
+import logging
 import subprocess
 import os
 
-os.environ["PATH"] += os.pathsep + "/root/go/bin:/usr/local/go/bin"
+# ── Ensure Go-installed tools are always in PATH ────────────────────────
+# This is critical inside the worker container where Go binaries live
+# under /root/go/bin but Celery's subprocess may not inherit the full PATH.
+os.environ["PATH"] = "/root/go/bin:/usr/local/go/bin:" + os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin")
 
 from celery import shared_task, chain
 from app.core.celery_app import celery_app
 import redis
+
+log = logging.getLogger(__name__)
 
 redis_client = redis.Redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"))
 
@@ -34,8 +40,10 @@ def _publish(target_id: int, msg: dict):
 
 
 def _safe_run(cmd: list, input_data: str | None = None, timeout: int = 300) -> subprocess.CompletedProcess:
-    """Run a CLI tool safely, returning CompletedProcess."""
-    return subprocess.run(
+    """Run a CLI tool safely, returning CompletedProcess.
+    Logs stderr for debugging when a tool writes warnings/errors."""
+    log.info(f"Running: {' '.join(cmd[:3])}... (timeout={timeout}s)")
+    result = subprocess.run(
         cmd,
         input=input_data,
         capture_output=True,
@@ -43,6 +51,11 @@ def _safe_run(cmd: list, input_data: str | None = None, timeout: int = 300) -> s
         timeout=timeout,
         check=False,
     )
+    if result.returncode != 0:
+        log.warning(f"{cmd[0]} returned code {result.returncode}: {result.stderr[:500]}")
+    elif result.stderr:
+        log.debug(f"{cmd[0]} stderr: {result.stderr[:300]}")
+    return result
 
 
 # ── Stage 1: Subdomain Enumeration ─────────────────────────────────────
@@ -55,9 +68,11 @@ def run_subfinder(self, target_id: int, domain: str):
         result = _safe_run(["subfinder", "-d", domain, "-silent", "-all"], timeout=600)
         subdomains = list({line.strip() for line in result.stdout.splitlines() if line.strip()})
         _publish(target_id, {"tool": "subfinder", "status": "completed", "count": len(subdomains)})
+        log.info(f"subfinder found {len(subdomains)} subdomains for {domain}")
         return {"domain": domain, "subdomains": subdomains}
     except FileNotFoundError:
         _publish(target_id, {"tool": "subfinder", "status": "skipped", "reason": "not installed"})
+        log.error("subfinder binary not found in PATH")
         return {"domain": domain, "subdomains": [domain]}
     except subprocess.TimeoutExpired:
         _publish(target_id, {"tool": "subfinder", "status": "timeout"})
@@ -78,6 +93,8 @@ def run_dnsx(self, subfinder_result: dict, target_id: int):
 
     try:
         input_data = "\n".join(subdomains)
+        # Use -a for A record lookup and -json for structured output.
+        # Do NOT combine -resp with -json — they produce conflicting formats.
         result = _safe_run(
             ["dnsx", "-silent", "-a", "-json"],
             input_data=input_data,
@@ -86,6 +103,9 @@ def run_dnsx(self, subfinder_result: dict, target_id: int):
         resolved = []
         resolved_hosts = set()
         for line in result.stdout.splitlines():
+            line = line.strip()
+            if not line:
+                continue
             try:
                 entry = json.loads(line)
                 host = entry.get("host", "").strip()
@@ -94,24 +114,32 @@ def run_dnsx(self, subfinder_result: dict, target_id: int):
                     resolved_hosts.add(host)
                     resolved.append({"host": host, "ips": ips})
             except json.JSONDecodeError:
-                line_str = line.strip()
-                if not line_str: continue
-                # if dnsx outputs standard text format e.g. "sub.domain.com [1.2.3.4]"
-                host = line_str.split()[0]
-                if host:
+                # dnsx plain text fallback: "sub.domain.com [1.2.3.4]"
+                # Extract just the hostname (first token before any space/bracket)
+                host = line.split()[0].strip()
+                if host and "." in host:
                     resolved_hosts.add(host)
                     resolved.append({"host": host, "ips": []})
 
         # Keep only resolved subdomains (valid DNS)
         valid_subs = [s for s in subdomains if s in resolved_hosts]
+
+        # If dnsx resolved nothing (maybe it's not working), pass all subs through
+        # so the pipeline doesn't die with empty data
+        if not valid_subs and subdomains:
+            log.warning(f"dnsx resolved 0 of {len(subdomains)} subs — passing all through as fallback")
+            valid_subs = subdomains
+
         _publish(target_id, {
             "tool": "dnsx", "status": "completed",
             "resolved": len(resolved), "filtered_out": len(subdomains) - len(valid_subs),
         })
+        log.info(f"dnsx: {len(resolved)} resolved, {len(valid_subs)} valid subs kept")
         return {"domain": domain, "subdomains": valid_subs, "resolved": resolved}
 
     except FileNotFoundError:
         _publish(target_id, {"tool": "dnsx", "status": "skipped", "reason": "not installed"})
+        log.error("dnsx binary not found in PATH")
         return {"domain": domain, "subdomains": subdomains, "resolved": []}
     except subprocess.TimeoutExpired:
         _publish(target_id, {"tool": "dnsx", "status": "timeout"})
@@ -166,6 +194,7 @@ def run_naabu(self, dnsx_result: dict, target_id: int):
             "tool": "naabu", "status": "completed",
             "hosts_with_ports": len(ports_map), "total_ports": total_ports,
         })
+        log.info(f"naabu: {len(ports_map)} hosts with {total_ports} total ports")
         return {
             "domain": domain, "subdomains": subdomains,
             "resolved": resolved, "ports": ports_map,
@@ -173,6 +202,7 @@ def run_naabu(self, dnsx_result: dict, target_id: int):
 
     except FileNotFoundError:
         _publish(target_id, {"tool": "naabu", "status": "skipped", "reason": "not installed"})
+        log.error("naabu binary not found in PATH")
         return {
             "domain": domain, "subdomains": subdomains,
             "resolved": resolved, "ports": {},
@@ -237,6 +267,7 @@ def run_httpx(self, naabu_result: dict, target_id: int):
                         "content_length": 0, "webserver": "",
                     })
         _publish(target_id, {"tool": "httpx", "status": "completed", "live_hosts": len(live)})
+        log.info(f"httpx: {len(live)} live hosts detected")
         return {
             "domain": domain, "subdomains": subdomains,
             "resolved": resolved, "ports": ports_map, "live": live,
@@ -244,6 +275,7 @@ def run_httpx(self, naabu_result: dict, target_id: int):
 
     except FileNotFoundError:
         _publish(target_id, {"tool": "httpx", "status": "skipped", "reason": "not installed"})
+        log.error("httpx binary not found in PATH")
         live = [{"url": f"https://{s}", "status_code": 0, "title": "",
                  "technologies": [], "content_length": 0, "webserver": ""} for s in subdomains]
         return {
@@ -283,8 +315,10 @@ def run_endpoint_discovery(self, httpx_result: dict, target_id: int):
                 if ep:
                     endpoints.add(ep)
         _publish(target_id, {"tool": "katana", "status": "completed", "endpoints": len(endpoints)})
+        log.info(f"katana: {len(endpoints)} endpoints crawled")
     except FileNotFoundError:
         _publish(target_id, {"tool": "katana", "status": "skipped", "reason": "not installed"})
+        log.error("katana binary not found in PATH")
     except subprocess.TimeoutExpired:
         _publish(target_id, {"tool": "katana", "status": "timeout"})
 
@@ -302,8 +336,10 @@ def run_endpoint_discovery(self, httpx_result: dict, target_id: int):
                 endpoints.add(ep)
                 gau_count += 1
         _publish(target_id, {"tool": "gau", "status": "completed", "historical_urls": gau_count})
+        log.info(f"gau: {gau_count} historical URLs found")
     except FileNotFoundError:
         _publish(target_id, {"tool": "gau", "status": "skipped", "reason": "not installed"})
+        log.error("gau binary not found in PATH")
     except subprocess.TimeoutExpired:
         _publish(target_id, {"tool": "gau", "status": "timeout"})
 
@@ -360,11 +396,13 @@ def run_nuclei(self, enriched_result: dict, target_id: int):
                 pass
 
         _publish(target_id, {"tool": "nuclei", "status": "completed", "findings": len(findings)})
+        log.info(f"nuclei: {len(findings)} vulnerabilities found")
         enriched_result["nuclei_findings"] = findings
         return enriched_result
 
     except FileNotFoundError:
         _publish(target_id, {"tool": "nuclei", "status": "skipped", "reason": "not installed"})
+        log.error("nuclei binary not found in PATH")
         enriched_result["nuclei_findings"] = []
         return enriched_result
     except subprocess.TimeoutExpired:
@@ -505,6 +543,7 @@ def normalize_assets_task(self, pipeline_result: dict, target_id: int):
                 stats["findings"] += 1
 
         db.commit()
+        log.info(f"normalize: persisted {stats} for target {target_id}")
         _publish(target_id, {
             "tool": "normalize", "status": "completed",
             "target_id": target_id, **stats,
@@ -512,6 +551,7 @@ def normalize_assets_task(self, pipeline_result: dict, target_id: int):
         return {"status": "success", **stats}
     except Exception as e:
         db.rollback()
+        log.error(f"normalize error: {e}")
         _publish(target_id, {"tool": "normalize", "status": "error", "error": str(e)})
         return {"error": str(e)}
     finally:
@@ -525,10 +565,30 @@ def start_recon_pipeline(target_id: int, domains: list):
 
     Pipeline: subfinder → dnsx → naabu → httpx → katana+gau → nuclei → normalize
 
+    Verifies Celery broker connectivity first, then dispatches the chain.
     Raises an exception if Celery/Redis is unreachable — caller handles fallback.
     """
     if not domains:
         return None
+
+    # ── Pre-flight: verify broker is reachable ──
+    # This prevents silent failures where apply_async() returns a task ID
+    # but no worker ever picks up the task.
+    try:
+        conn = celery_app.connection()
+        conn.ensure_connection(max_retries=1, timeout=5)
+        conn.close()
+    except Exception as e:
+        raise ConnectionError(f"Cannot reach Celery broker: {e}") from e
+
+    # ── Also verify at least one worker is alive ──
+    try:
+        inspector = celery_app.control.inspect(timeout=5)
+        active = inspector.active_queues()
+        if not active:
+            raise ConnectionError("No Celery workers are online — is the worker container running?")
+    except Exception as e:
+        raise ConnectionError(f"Worker health check failed: {e}") from e
 
     domain = domains[0]  # Primary domain
     recon_chain = chain(
@@ -541,6 +601,7 @@ def start_recon_pipeline(target_id: int, domains: list):
         normalize_assets_task.s(target_id),
     )
     result = recon_chain.apply_async()
+    log.info(f"Pipeline dispatched: job={result.id} target={target_id} domain={domain}")
     return result.id
 
 
