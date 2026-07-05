@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y \
     shared-mime-info \
     wget \
     unzip \
+    libpcap-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install subfinder
@@ -27,6 +28,12 @@ RUN wget -q https://github.com/projectdiscovery/httpx/releases/download/v1.6.8/h
     && unzip httpx_1.6.8_linux_amd64.zip \
     && mv httpx /usr/local/bin/ \
     && rm httpx_1.6.8_linux_amd64.zip
+
+# Install naabu
+RUN wget -q https://github.com/projectdiscovery/naabu/releases/download/v2.3.1/naabu_2.3.1_linux_amd64.zip \
+    && unzip naabu_2.3.1_linux_amd64.zip \
+    && mv naabu /usr/local/bin/ \
+    && rm naabu_2.3.1_linux_amd64.zip
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
