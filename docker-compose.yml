@@ -36,6 +36,9 @@ services:
       context: ./backend
       dockerfile: Dockerfile.api
     container_name: bughunter_api
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
     depends_on:
       db:
         condition: service_healthy
