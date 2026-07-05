@@ -1,7 +1,7 @@
 """
-Enterprise-Grade Recon Pipeline
+Recon Pipeline
 ================================
-subfinder → dnsx → naabu → httpx → katana → gau → nuclei → normalize
+subfinder → naabu → httpx → normalize
 
 Each stage is a Celery shared_task that can be chained, grouped, or run
 independently.  All tasks publish real-time progress via Redis pub/sub
@@ -432,7 +432,6 @@ def normalize_assets_task(self, pipeline_result: dict, target_id: int):
         subdomains = pipeline_result.get("subdomains", [])
         ports_map = pipeline_result.get("ports", {})
         endpoints = pipeline_result.get("endpoints", [])
-        nuclei_findings = pipeline_result.get("nuclei_findings", [])
         resolved = pipeline_result.get("resolved", [])
 
         stats = {"subdomains": 0, "live_hosts": 0, "ports": 0, "endpoints": 0, "findings": 0}
@@ -499,49 +498,6 @@ def normalize_assets_task(self, pipeline_result: dict, target_id: int):
                 db.add(asset)
                 stats["endpoints"] += 1
 
-        # ── Persist nuclei findings ──
-        for finding in nuclei_findings:
-            title = finding.get("name") or finding.get("template_id", "Unknown")
-            severity = finding.get("severity", "info").lower()
-            if severity not in ("low", "medium", "high", "critical"):
-                severity = "low"
-
-            # Avoid duplicate findings for same template + URL
-            existing = db.query(Finding).filter(
-                Finding.target_id == target_id,
-                Finding.title == title,
-                Finding.vulnerability_class == finding.get("template_id", ""),
-            ).first()
-            if not existing:
-                desc_parts = [finding.get("description", "")]
-                if finding.get("matched_url"):
-                    desc_parts.append(f"Matched URL: {finding['matched_url']}")
-                if finding.get("reference"):
-                    refs = finding["reference"]
-                    if isinstance(refs, list):
-                        desc_parts.append("References: " + ", ".join(refs))
-                if finding.get("tags"):
-                    tags = finding["tags"]
-                    if isinstance(tags, list):
-                        desc_parts.append("Tags: " + ", ".join(tags))
-
-                evidence_parts = []
-                if finding.get("curl_command"):
-                    evidence_parts.append(f"curl command:\n{finding['curl_command']}")
-                if finding.get("extracted_results"):
-                    evidence_parts.append(f"Extracted: {json.dumps(finding['extracted_results'])}")
-
-                f = Finding(
-                    target_id=target_id,
-                    title=title,
-                    severity=severity,
-                    vulnerability_class=finding.get("template_id", ""),
-                    description="\n\n".join(desc_parts),
-                    evidence="\n\n".join(evidence_parts) if evidence_parts else None,
-                )
-                db.add(f)
-                stats["findings"] += 1
-
         db.commit()
         log.info(f"normalize: persisted {stats} for target {target_id}")
         _publish(target_id, {
@@ -561,9 +517,9 @@ def normalize_assets_task(self, pipeline_result: dict, target_id: int):
 # ── Pipeline Orchestrators ──────────────────────────────────────────────
 
 def start_recon_pipeline(target_id: int, domains: list):
-    """Build and dispatch the full enterprise recon chain for the primary domain.
+    """Build and dispatch the full recon chain for the primary domain.
 
-    Pipeline: subfinder → dnsx → naabu → httpx → katana+gau → nuclei → normalize
+    Pipeline: subfinder → naabu → httpx → normalize
 
     Verifies Celery broker connectivity first, then dispatches the chain.
     Raises an exception if Celery/Redis is unreachable — caller handles fallback.
@@ -593,11 +549,8 @@ def start_recon_pipeline(target_id: int, domains: list):
     domain = domains[0]  # Primary domain
     recon_chain = chain(
         run_subfinder.s(target_id, domain),
-        run_dnsx.s(target_id),
         run_naabu.s(target_id),
         run_httpx.s(target_id),
-        run_endpoint_discovery.s(target_id),
-        run_nuclei.s(target_id),
         normalize_assets_task.s(target_id),
     )
     result = recon_chain.apply_async()
@@ -615,22 +568,13 @@ def _run_recon_sync(target_id: int, domains: list) -> str:
         # Step 1: subfinder
         sf_result = run_subfinder.run(target_id, domain)
 
-        # Step 2: dnsx
-        dnsx_result = run_dnsx.run(sf_result, target_id)
+        # Step 2: naabu
+        naabu_result = run_naabu.run(sf_result, target_id)
 
-        # Step 3: naabu
-        naabu_result = run_naabu.run(dnsx_result, target_id)
-
-        # Step 4: httpx
+        # Step 3: httpx
         httpx_result = run_httpx.run(naabu_result, target_id)
 
-        # Step 5: endpoint discovery (katana + gau)
-        enriched_result = run_endpoint_discovery.run(httpx_result, target_id)
-
-        # Step 6: nuclei
-        nuclei_result = run_nuclei.run(enriched_result, target_id)
-
-        # Step 7: normalize + persist to DB
-        normalize_assets_task.run(nuclei_result, target_id)
+        # Step 4: normalize + persist to DB
+        normalize_assets_task.run(httpx_result, target_id)
 
     return job_id

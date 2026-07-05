@@ -80,8 +80,8 @@ def run_recon(target_id: int):
             "domains": domains,
             "status": "started",
             "mode": mode,
-            "pipeline": "subfinder → dnsx → naabu → httpx → katana+gau → nuclei → normalize",
-            "message": f"Enterprise recon pipeline started ({mode}) for {len(domains)} domain(s).",
+            "pipeline": "subfinder → naabu → httpx → normalize",
+            "message": f"Recon pipeline started ({mode}) for {len(domains)} domain(s).",
         }
     finally:
         db.close()
